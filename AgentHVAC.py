@@ -6,6 +6,7 @@ from spade.behaviour import FSMBehaviour, PeriodicBehaviour, State
 from spade.message import Message
 from spade.template import Template
 import random
+from Naredbe import *
 
 STANJE_CEKANJA = "STATE_CEKANJA"
 STANJE_OBRADE = "STANJE_OBRADE"
@@ -20,7 +21,7 @@ DeltaTemp = 1
 class AgentHVAC(Agent):
     def __init__(self, jid, password, adresaKontrolera):
         super().__init__(jid, password)
-        self.adresaKontrolera = adresaKontrolera
+        self.kontroler = adresaKontrolera
 
     class HVACFSMPonasanje(FSMBehaviour):
         async def on_start(self):
@@ -64,8 +65,9 @@ class AgentHVAC(Agent):
     
     class StanjeIzvjescivanja(State):
         async def run(self):
-            self.posaljiNaredbu(f"izvjestaj {TrenutnaTemp}")
-            self.set_next_state(STANJE_OBRADE)
+            msg = TrenutnaTemperatura("HVAC 1", self.agent.kontroler, self.TrenutnaTemperatura)
+            await self.send(msg)
+            self.set_next_state(STANJE_CEKANJA)
             return
     
     class StanjeGrijanja(State):
@@ -87,15 +89,6 @@ class AgentHVAC(Agent):
         template.set_metadata("performative", "request")
 
         self.add_behaviour(fsm, template)
-
-    async def posaljiNaredbu(self, naziv, naredba):
-            sadrzaj = f"{naredba} {naziv}"
-                
-            print(f"Okruzje: Saljem narudzbu {sadrzaj}")
-            msg = Message(to="lovrom8@c99x.io")
-            msg.set_metadata("performative", "request")
-            msg.body = sadrzaj
-            await self.send(msg)
 
     def dodajStanja(self, fsm):
         fsm.add_state(name=STANJE_CEKANJA, state=self.StanjeCekanjaPoruke(), initial=True)
