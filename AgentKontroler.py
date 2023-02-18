@@ -1,36 +1,37 @@
 import time
-from datetime import timedelta, datetime
 from spade.agent import Agent
 from spade.behaviour import PeriodicBehaviour
-from spade.message import Message
 from spade.template import Template
-import random
 import json
 from Naredbe import * 
 
 class AgentKontroler(Agent):
-    def __init__(self, jid, password, trosila, adresaPrisutnosti):
+    def __init__(self, jid, password, trosila, adresaPrisutnosti, promjenaStanjaCallback):
         super().__init__(jid, password)
-        self.trosilo = trosila[0]
-        self.kontrolerPrisutnosti = adresaPrisutnosti
-    
+        self.agentTrosila = trosila[0]
+        self.agentPrisutnosti = adresaPrisutnosti
+        self.brojPerioda = 0
+        self.promjenaStanjaCallback = promjenaStanjaCallback
+        
     class KontrolerPonasanje(PeriodicBehaviour):
-        async def on_start(self):
-            print("Kontroler zapocinje s radom")
-
         async def obradiStanjePrisutnosti(self, sadrzaj):
-            print("Agent kontroler - obrađujem stanje prisustva")
+            print("Kontroler: obrađujem stanje prisustva")
             sadrzaj = json.loads(sadrzaj)
 
-            print(sadrzaj)
-
             if sadrzaj['prisutan']:
-                msg = PostaviTemperaturu("Kontroler", self.agent.trosilo, 10)
+                msg = PostaviTemperaturu("Kontroler", self.agent.agentTrosila, 25)
                 await self.send(msg)
+            
+            self.agent.promjenaStanjaCallback(sadrzaj['prisutan'], None)
             
             return
         
         async def obradiIzvjestajOTemperaturi(self, sadrzaj):
+            print("Kontroler: obrađujem izvještaj o temperaturi")
+            sadrzaj = json.loads(sadrzaj)
+
+            self.agent.promjenaStanjaCallback(None, sadrzaj['trenutnaTemperatura'])
+            
             return
 
         async def obradiPoruku(self, msg):
@@ -38,14 +39,19 @@ class AgentKontroler(Agent):
 
             if "StanjePrisustva" in naredba:
                 await self.obradiStanjePrisutnosti(msg.body)
-            elif "DajTemperaturu" in naredba:
+            elif "TrenutnaTemperatura" in naredba:
                 await self.obradiIzvjestajOTemperaturi(msg.body)
 
         async def run(self):
-            msg = DajStanjePrisustva("Kontroler", self.agent.kontrolerPrisutnosti)
+            if self.agent.brojPerioda == 5:
+                msg = DajTemperaturu("Kontroler", self.agent.agentTrosila)
+                self.agent.brojPerioda = 0
+            else:
+                msg = DajStanjePrisustva("Kontroler", self.agent.agentPrisutnosti)
+                self.agent.brojPerioda += 1
             await self.send(msg)
 
-            msg = await self.receive(timeout=0)
+            msg = await self.receive(timeout=3)
 
             if msg is not None:
                 await self.obradiPoruku(msg)

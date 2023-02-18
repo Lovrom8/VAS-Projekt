@@ -1,11 +1,6 @@
-import spade 
-import time
-from datetime import timedelta, datetime
 from spade.agent import Agent
-from spade.behaviour import FSMBehaviour, PeriodicBehaviour, State
-from spade.message import Message
+from spade.behaviour import FSMBehaviour, State
 from spade.template import Template
-import random
 from Naredbe import *
 
 STANJE_CEKANJA = "STATE_CEKANJA"
@@ -14,14 +9,14 @@ STANJE_GRIJANJA = "STANJE_GRIJANJA"
 STANJE_MJERENJA = "STANJE_MJERENJA"
 STANJE_IZVJESCIVANJA = "STANJE_IZVJESCIVANJA"
 
-TrenutnaTemp = 15
-CiljnaTemp = 25
-DeltaTemp = 1
-
 class AgentHVAC(Agent):
     def __init__(self, jid, password, adresaKontrolera):
         super().__init__(jid, password)
         self.kontroler = adresaKontrolera
+        self.TrenutnaTemp = 15
+        self.CiljnaTemp = 25
+        self.DeltaTemp = 1
+        self.TemperaturaVani = 10
 
     class HVACFSMPonasanje(FSMBehaviour):
         async def on_start(self):
@@ -31,55 +26,61 @@ class AgentHVAC(Agent):
     class StanjeCekanjaPoruke(State):
         async def run(self):
             print("HVAC: u stanju cekanja poruke")
-            msg = await self.receive(timeout=60)
+            msg = await self.receive(timeout=30)
 
-            self.agent.posljednjaPoruka = msg.body
-            self.set_next_state(STANJE_OBRADE)
+            if (msg is not None):
+                self.agent.posljednjaPoruka = msg.body
+                self.set_next_state(STANJE_OBRADE)
+            else:
+                self.set_next_state(STANJE_CEKANJA)
+                if (self.agent.TrenutnaTemp > self.agent.TemperaturaVani):
+                    self.agent.TrenutnaTemp -= 1
    
     class StanjeObradePoruke(State):
         async def run(self):
             print(f"HVAC: obradujem poruku {self.agent.posljednjaPoruka}")
 
-            dijelovi = self.agent.posljednjaPoruka.split()
-            naredba = dijelovi[0]
-            naziv = dijelovi[1]
-            self.agent.posljednjiNaziv = naziv
-
-            if "temperatura" in naredba:
+            sadrzaj = json.loads(self.agent.posljednjaPoruka)
+            if "PostaviTemperaturu" in sadrzaj['naredba']:
+                self.agent.CiljnaTemp = sadrzaj['zeljenaTemperatura']
                 self.set_next_state(STANJE_GRIJANJA)
-            elif "mjeri" in naredba:
+            elif "DajTemperaturu" in sadrzaj['naredba']:
                 self.set_next_state(STANJE_MJERENJA)
 
     class StanjeMjerenja(State):
         async def run(self):
-            sleep(1)
-            if ("temperatura" in self.posljednjaPoruka):
-                if (TrenutnaTemp < CiljnaTemp):
+            print(f"HVAC: u stanju STANJE_MJERENJA")
+            
+            if ("PostaviTemperaturu" in self.agent.posljednjaPoruka):
+                if (self.agent.TrenutnaTemp < self.agent.CiljnaTemp):
                     self.set_next_state(STANJE_GRIJANJA)
                 else:
                     self.set_next_state(STANJE_CEKANJA)  
-            elif ("mjeri" in self.posljednjaPoruka):
+            elif ("DajTemperaturu" in self.agent.posljednjaPoruka):
                 self.set_next_state(STANJE_IZVJESCIVANJA)
 
             return
     
     class StanjeIzvjescivanja(State):
         async def run(self):
-            msg = TrenutnaTemperatura("HVAC 1", self.agent.kontroler, self.TrenutnaTemperatura)
+            print(f"HVAC: u stanju STANJE_IZVJESCIVANJA")
+            
+            msg = TrenutnaTemperatura("HVAC 1", self.agent.kontroler, self.agent.TrenutnaTemp)
             await self.send(msg)
             self.set_next_state(STANJE_CEKANJA)
             return
     
     class StanjeGrijanja(State):
         async def run(self):
-            TrenutnaTemp += DeltaTemp
+            print(f"HVAC: u stanju STANJE_GRIJANJA")
+            
+            self.agent.TrenutnaTemp += self.agent.DeltaTemp
             self.set_next_state(STANJE_MJERENJA)
             return
 
     async def setup(self):
-        print("Inicijaliziram HVAC")
+        print("HVAC: Inicijaliziram")
         self.posljednjaPoruka = ""
-        self.posljednjiNaziv = ""
 
         fsm = self.HVACFSMPonasanje()
         self.dodajStanja(fsm)
@@ -99,10 +100,13 @@ class AgentHVAC(Agent):
         return
 
     def dodajTranzicije(self, fsm):
+        fsm.add_transition(source=STANJE_CEKANJA, dest=STANJE_CEKANJA)
         fsm.add_transition(source=STANJE_CEKANJA, dest=STANJE_OBRADE)
         fsm.add_transition(source=STANJE_OBRADE, dest=STANJE_GRIJANJA)
         fsm.add_transition(source=STANJE_OBRADE, dest=STANJE_MJERENJA)
         fsm.add_transition(source=STANJE_GRIJANJA, dest=STANJE_MJERENJA)
+        fsm.add_transition(source=STANJE_MJERENJA, dest=STANJE_GRIJANJA)
         fsm.add_transition(source=STANJE_MJERENJA, dest=STANJE_IZVJESCIVANJA)
+        fsm.add_transition(source=STANJE_MJERENJA, dest=STANJE_CEKANJA)
         fsm.add_transition(source=STANJE_IZVJESCIVANJA, dest=STANJE_CEKANJA)
         return

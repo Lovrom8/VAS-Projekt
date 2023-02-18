@@ -1,8 +1,5 @@
-import time
-from datetime import timedelta, datetime
 from spade.agent import Agent
 from spade.behaviour import CyclicBehaviour
-from spade.message import Message
 from spade.template import Template
 from os import listdir
 import random
@@ -40,13 +37,13 @@ class AgentPrisutnost(Agent):
             podaci = np.ndarray(shape=(1, 224, 224, 3), dtype=np.float32)
             podaci[0] = normaliziranaSlika
 
-            prediction = self.agent.model.predict(podaci)
+            prediction = self.agent.model.predict(podaci, verbose = 0)
             index = np.argmax(prediction)
             nazivKlase = naziviKlasa[index]
             confidence_score = prediction[0][index]
 
             print(f"Prisustvo: slika - {slikaPutanja}")
-            print("Klasa:", nazivKlase, end="")
+            print("Prisustvo: Klasa = ", nazivKlase, end=" ")
             print("Vjerojatnost:", confidence_score)
 
             self.agent.promjenaSlikeCallback(slikaPutanja)
@@ -55,6 +52,7 @@ class AgentPrisutnost(Agent):
         
         async def obradiPoruku(self, msg):
             if 'DajPrisustvo' in msg.body:
+                print(f"Prisustvo: stigla naredba DajPrisustvo")
                 klasa = await self.provjeri(self.odaberiSlucajno())
                 prisutan = "RandomHuman" in klasa
                 
@@ -62,14 +60,14 @@ class AgentPrisutnost(Agent):
                 await self.send(poruka)
 
         async def run(self):
-            msg = await self.receive(timeout=0)
+            msg = await self.receive(timeout=20)
 
             if msg is not None:
                await self.obradiPoruku(msg)
     
     async def setup(self):
+        print("Prisustvo: Inicijaliziram")
         self.prisutnostPonasanje = self.PrisutnostPonasanje()
-        self.narudzbe = []
 
         template = Template()
         template.set_metadata("performative", "request")
